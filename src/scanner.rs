@@ -94,7 +94,7 @@ pub enum TokenType {
     VersionDirective(u32, u32),
     /// handle, prefix
     TagDirective(String, String),
-    DocumentStart,
+    DocumentStart(u64, u64, bool),
     DocumentEnd,
     BlockSequenceStart,
     BlockMappingStart,
@@ -194,19 +194,15 @@ fn is_blankz(c: char) -> bool {
 }
 #[inline]
 fn is_digit(c: char) -> bool {
-    c >= '0' && c <= '9'
+    ('0'..='9').contains(&c)
 }
 #[inline]
 fn is_alpha(c: char) -> bool {
-    match c {
-        '0'..='9' | 'a'..='z' | 'A'..='Z' => true,
-        '_' | '-' => true,
-        _ => false,
-    }
+    matches!(c, '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' | '-')
 }
 #[inline]
 fn is_hex(c: char) -> bool {
-    (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+    ('0'..='9').contains(&c) || ('a'..='f').contains(&c) || ('A'..='F').contains(&c)
 }
 #[inline]
 fn as_hex(c: char) -> u32 {
@@ -219,10 +215,7 @@ fn as_hex(c: char) -> u32 {
 }
 #[inline]
 fn is_flow(c: char) -> bool {
-    match c {
-        ',' | '[' | ']' | '{' | '}' => true,
-        _ => false,
-    }
+    matches!(c, ',' | '[' | ']' | '{' | '}')
 }
 
 pub type ScanResult = Result<(), ScanError>;
@@ -251,10 +244,7 @@ impl<T: Iterator<Item = char>> Scanner<T> {
     }
     #[inline]
     pub fn get_error(&self) -> Option<ScanError> {
-        match self.error {
-            None => None,
-            Some(ref e) => Some(e.clone()),
-        }
+        self.error.as_ref().cloned()
     }
 
     #[inline]
@@ -373,8 +363,7 @@ impl<T: Iterator<Item = char>> Scanner<T> {
             && self.buffer[2] == '-'
             && is_blankz(self.buffer[3])
         {
-            self.fetch_document_indicator(TokenType::DocumentStart)?;
-            return Ok(());
+            return self.fetch_document_start();
         }
 
         if self.mark.col == 0
@@ -1060,6 +1049,92 @@ impl<T: Iterator<Item = char>> Scanner<T> {
         self.skip();
 
         self.tokens.push_back(Token(mark, t));
+        Ok(())
+    }
+
+    fn fetch_document_start(&mut self) -> ScanResult {
+        self.unroll_indent(-1);
+        self.remove_simple_key()?;
+        self.disallow_simple_key();
+
+        let mark = self.mark;
+
+        self.skip();
+        self.skip();
+        self.skip();
+        self.skip();
+
+        self.lookahead(1);
+        if self.ch() != '!' {
+            return Err(ScanError::new(
+                mark,
+                "while scanning a tag, did not find expected '!'",
+            ));
+        }
+        // string.push(self.ch());
+        self.skip();
+
+        self.lookahead(1);
+        while is_alpha(self.ch()) {
+            // string.push(self.ch());
+            self.skip();
+            self.lookahead(1);
+        }
+        if self.ch() != '!' {
+            return Err(ScanError::new(
+                mark,
+                "while scanning a tag, did not find expected '!'",
+            ));
+        }
+        self.skip();
+        let mut class_id = 0u64;
+        self.lookahead(1);
+        while is_digit(self.ch()) {
+            class_id = class_id * 10 + (self.ch() as usize - '0' as usize) as u64;
+            self.skip();
+            self.lookahead(1);
+        }
+        while is_blank(self.ch()) {
+            self.skip();
+            self.lookahead(1);
+        }
+        if self.ch() != '&' {
+            return Err(ScanError::new(
+                mark,
+                "while scanning a tag, did not find expected '&'",
+            ));
+        }
+        self.skip();
+        self.lookahead(1);
+
+        let mut object_id = 0u64;
+        while is_digit(self.ch()) {
+            object_id = object_id * 10 + (self.ch() as usize - '0' as usize) as u64;
+            self.skip();
+            self.lookahead(1);
+        }
+
+        while is_blank(self.ch()) {
+            self.skip();
+            self.lookahead(1);
+        }
+
+        let mut stripped = false;
+        if self.ch() == 's' {
+            self.skip();
+            self.skip();
+            self.skip();
+            self.skip();
+            self.skip();
+            self.skip();
+            self.skip();
+            self.skip();
+            self.lookahead(1);
+
+            stripped = true;
+        }
+
+        self.tokens.push_back(Token(mark, TokenType::DocumentStart(class_id, object_id, stripped)));
         Ok(())
     }
 
@@ -1799,7 +1874,7 @@ mod test {
 ";
         let mut p = Scanner::new(s.chars());
         next!(p, StreamStart(..));
-        next!(p, DocumentStart);
+        next!(p, DocumentStart(..));
         next!(p, Scalar(TScalarStyle::SingleQuoted, _));
         next!(p, DocumentEnd);
         next!(p, StreamEnd);
@@ -1818,9 +1893,9 @@ mod test {
         let mut p = Scanner::new(s.chars());
         next!(p, StreamStart(..));
         next!(p, Scalar(TScalarStyle::SingleQuoted, _));
-        next!(p, DocumentStart);
+        next!(p, DocumentStart(..));
         next!(p, Scalar(TScalarStyle::SingleQuoted, _));
-        next!(p, DocumentStart);
+        next!(p, DocumentStart(..));
         next!(p, Scalar(TScalarStyle::SingleQuoted, _));
         next!(p, StreamEnd);
         end!(p);
@@ -2159,7 +2234,7 @@ key:
         let s = "---\r\n- tok1\r\n- tok2";
         let mut p = Scanner::new(s.chars());
         next!(p, StreamStart(..));
-        next!(p, DocumentStart);
+        next!(p, DocumentStart(..));
         next!(p, BlockSequenceStart);
         next!(p, BlockEntry);
         next_scalar!(p, TScalarStyle::Plain, "tok1");

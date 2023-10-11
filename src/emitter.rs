@@ -34,8 +34,9 @@ pub struct YamlEmitter<'a> {
     writer: &'a mut dyn fmt::Write,
     best_indent: usize,
     compact: bool,
-
+    bad_value: Option<&'a str>,
     level: isize,
+    written: bool,
 }
 
 pub type EmitResult = Result<(), EmitError>;
@@ -110,6 +111,8 @@ impl<'a> YamlEmitter<'a> {
             best_indent: 2,
             compact: true,
             level: -1,
+            written: false,
+            bad_value: None,
         }
     }
 
@@ -130,11 +133,19 @@ impl<'a> YamlEmitter<'a> {
         self.compact
     }
 
+    /// Set description for Null and BadValue
+    pub fn bad_value(&mut self, value: &'a str) {
+        self.bad_value = Some(value);
+    }
+
     pub fn dump(&mut self, doc: &Yaml) -> EmitResult {
-        // write DocumentStart
-        writeln!(self.writer, "---")?;
+        if self.written {
+            writeln!(self.writer)?;
+        }
         self.level = -1;
-        self.emit_node(doc)
+        self.emit_node(doc)?;
+        self.written = true;
+        Ok(())
     }
 
     fn write_indent(&mut self) -> EmitResult {
@@ -178,7 +189,11 @@ impl<'a> YamlEmitter<'a> {
                 Ok(())
             }
             Yaml::Null | Yaml::BadValue => {
-                write!(self.writer, "~")?;
+                write!(self.writer, "{}", self.bad_value.unwrap_or(""))?;
+                Ok(())
+            }
+            Yaml::Original(ref v) => {
+                write!(self.writer, "{}", v)?;
                 Ok(())
             }
             // XXX(chenyh) Alias
@@ -209,14 +224,18 @@ impl<'a> YamlEmitter<'a> {
             self.writer.write_str("{}")?;
         } else {
             self.level += 1;
+            if !h.block {
+                write!(self.writer, "{{")?;
+            }
             for (cnt, (k, v)) in h.iter().enumerate() {
-                let complex_key = match *k {
-                    Yaml::Hash(_) | Yaml::Array(_) => true,
-                    _ => false,
-                };
+                let complex_key = matches!(*k, Yaml::Hash(_) | Yaml::Array(_));
                 if cnt > 0 {
-                    writeln!(self.writer)?;
-                    self.write_indent()?;
+                    if h.block {
+                        writeln!(self.writer)?;
+                        self.write_indent()?;
+                    } else {
+                        write!(self.writer, ", ")?;
+                    } 
                 }
                 if complex_key {
                     write!(self.writer, "?")?;
@@ -231,6 +250,9 @@ impl<'a> YamlEmitter<'a> {
                     self.emit_val(false, v)?;
                 }
             }
+            if !h.block {
+                write!(self.writer, "}}")?;
+            }
             self.level -= 1;
         }
         Ok(())
@@ -240,7 +262,7 @@ impl<'a> YamlEmitter<'a> {
     /// following a ":" or "-", either after a space, or on a new line.
     /// If `inline` is true, then the preceding characters are distinct
     /// and short enough to respect the compact flag.
-    fn emit_val(&mut self, inline: bool, val: &Yaml) -> EmitResult {
+    fn emit_val(&mut self, mut inline: bool, val: &Yaml) -> EmitResult {
         match *val {
             Yaml::Array(ref v) => {
                 if (inline && self.compact) || v.is_empty() {
@@ -254,6 +276,7 @@ impl<'a> YamlEmitter<'a> {
                 self.emit_array(v)
             }
             Yaml::Hash(ref h) => {
+                inline = inline || !h.block;
                 if (inline && self.compact) || h.is_empty() {
                     write!(self.writer, " ")?;
                 } else {
@@ -291,14 +314,10 @@ fn need_quotes(string: &str) -> bool {
         string.starts_with(' ') || string.ends_with(' ')
     }
 
-    string == ""
+    string.is_empty()
         || need_quotes_spaces(string)
-        || string.starts_with(|character: char| match character {
-            '&' | '*' | '?' | '|' | '-' | '<' | '>' | '=' | '!' | '%' | '@' => true,
-            _ => false,
-        })
-        || string.contains(|character: char| match character {
-            ':'
+        || string.starts_with(|character: char| matches!(character, '&' | '*' | '?' | '|' | '-' | '<' | '>' | '=' | '!' | '%' | '@'))
+        || string.contains(|character: char| matches!(character, ':'
             | '{'
             | '}'
             | '['
@@ -314,9 +333,7 @@ fn need_quotes(string: &str) -> bool {
             | '\n'
             | '\r'
             | '\x0e'..='\x1a'
-            | '\x1c'..='\x1f' => true,
-            _ => false,
-        })
+            | '\x1c'..='\x1f'))
         || [
             // http://yaml.org/type/bool.html
             // Note: 'y', 'Y', 'n', 'N', is not quoted deliberately, as in libyaml. PyYAML also parse
@@ -354,7 +371,7 @@ a4:
     - 2
 ";
 
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -365,7 +382,7 @@ a4:
         println!("emitted:\n{}", writer);
         let docs_new = match YamlLoader::load_from_str(&writer) {
             Ok(y) => y,
-            Err(e) => panic!(format!("{}", e)),
+            Err(e) => panic!("{}", e),
         };
         let doc_new = &docs_new[0];
 
@@ -393,7 +410,7 @@ products:
   {}:
     empty hash key
             "#;
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -402,7 +419,7 @@ products:
         }
         let docs_new = match YamlLoader::load_from_str(&writer) {
             Ok(y) => y,
-            Err(e) => panic!(format!("{}", e)),
+            Err(e) => panic!("{}", e),
         };
         let doc_new = &docs_new[0];
         assert_eq!(doc, doc_new);
@@ -444,7 +461,7 @@ x: test
 y: avoid quoting here
 z: string with spaces"#;
 
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -502,7 +519,7 @@ null0: ~
 bool0: true
 bool1: false"#;
 
-        let docs = YamlLoader::load_from_str(&input).unwrap();
+        let docs = YamlLoader::load_from_str(input).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -551,7 +568,7 @@ e:
     h: []"#
         };
 
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -573,7 +590,7 @@ a:
     - - e
       - f"#;
 
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -597,7 +614,7 @@ a:
       - - f
       - - e"#;
 
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {
@@ -619,7 +636,7 @@ a:
       d:
         e: f"#;
 
-        let docs = YamlLoader::load_from_str(&s).unwrap();
+        let docs = YamlLoader::load_from_str(s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
         {

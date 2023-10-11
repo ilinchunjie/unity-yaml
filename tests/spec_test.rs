@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
-extern crate yaml_rust;
 
-use yaml_rust::parser::{Event, EventReceiver, Parser};
-use yaml_rust::scanner::TScalarStyle;
+use unity_yaml::parser::{Event, EventReceiver, Parser};
+use unity_yaml::scanner::TScalarStyle;
+use unity_yaml::Yaml::Array;
 
 // These names match the names used in the C++ test suite.
 #[cfg_attr(feature = "cargo-clippy", allow(enum_variant_names))]
@@ -76,8 +76,8 @@ include!("spec_test.rs.inc");
 
 #[test]
 fn test_mapvec_legal() {
-    use yaml_rust::yaml::{Array, Hash, Yaml};
-    use yaml_rust::{YamlEmitter, YamlLoader};
+    use unity_yaml::yaml::{Array, Hash, Yaml};
+    use unity_yaml::{YamlEmitter, YamlLoader};
 
     // Emitting a `map<map<seq<_>>, _>` should result in legal yaml that
     // we can parse.
