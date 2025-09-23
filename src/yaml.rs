@@ -3,6 +3,7 @@ use crate::parser::*;
 use crate::scanner::{Marker, ScanError, TScalarStyle, TokenType};
 use std::collections::BTreeMap;
 use std::f64;
+use std::fmt::{Display, Formatter};
 use std::i64;
 use std::mem;
 use std::ops::{Index, IndexMut};
@@ -50,9 +51,35 @@ pub enum Yaml {
     /// simplifies error handling in the calling code. Invalid type conversion also
     /// returns `BadValue`.
     BadValue,
-
     /// Original content.
     Original(string::String),
+}
+
+impl Display for Yaml {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Yaml::Real(x) => write!(f, "{}", x),
+            Yaml::Integer(x) => write!(f, "{}", x),
+            Yaml::String(x) => write!(f, "{}", x),
+            Yaml::Boolean(x) => write!(f, "{}", x),
+            Yaml::Array(x) => {
+                for x in x.iter() {
+                    writeln!(f, "{}", x)?;
+                }
+                Ok(())
+            },
+            Yaml::Hash(x) => {
+                for (k, v) in x.iter() {
+                    writeln!(f, "{}:{}", k, v)?;
+                }
+                Ok(())
+            },
+            Yaml::Alias(x) => write!(f, "{}", x),
+            Yaml::Null => write!(f, "null"),
+            Yaml::BadValue => write!(f, "bad value"),
+            Yaml::Original(x) => write!(f, "{}", x),
+        }
+    }
 }
 
 pub type Array = Vec<Yaml>;

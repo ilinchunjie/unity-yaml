@@ -94,7 +94,7 @@ pub enum TokenType {
     VersionDirective(u32, u32),
     /// handle, prefix
     TagDirective(String, String),
-    DocumentStart(u64, u64, bool),
+    DocumentStart(u64, i64, bool),
     DocumentEnd,
     BlockSequenceStart,
     BlockMappingStart,
@@ -195,6 +195,10 @@ fn is_blankz(c: char) -> bool {
 #[inline]
 fn is_digit(c: char) -> bool {
     ('0'..='9').contains(&c)
+}
+#[inline]
+fn is_negative(c: char) -> bool {
+    c == '-'
 }
 #[inline]
 fn is_alpha(c: char) -> bool {
@@ -1107,13 +1111,20 @@ impl<T: Iterator<Item = char>> Scanner<T> {
         self.skip();
         self.lookahead(1);
 
-        let mut object_id = 0u64;
-        while is_digit(self.ch()) {
-            object_id = object_id * 10 + (self.ch() as usize - '0' as usize) as u64;
+        let mut is_negative = is_negative(self.ch());
+        if is_negative {
             self.skip();
             self.lookahead(1);
         }
-
+        let mut object_id = 0i64;
+        while is_digit(self.ch()) {
+            object_id = object_id * 10 + (self.ch() as usize - '0' as usize) as i64;
+            self.skip();
+            self.lookahead(1);
+        }
+        if is_negative {
+            object_id = -object_id;
+        }
         while is_blank(self.ch()) {
             self.skip();
             self.lookahead(1);

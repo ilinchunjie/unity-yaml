@@ -37,7 +37,7 @@ pub enum Event {
     Nothing,
     StreamStart,
     StreamEnd,
-    DocumentStart(u64, u64, bool),
+    DocumentStart(u64, i64, bool),
     DocumentEnd,
     /// Refer to an anchor ID
     Alias(usize),
