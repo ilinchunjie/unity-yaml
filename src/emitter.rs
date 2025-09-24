@@ -196,6 +196,14 @@ impl<'a> YamlEmitter<'a> {
                 write!(self.writer, "{}", v)?;
                 Ok(())
             }
+            Yaml::Version(ref v) => {
+                write!(self.writer, "{}.{}", v.0, v.1)?;
+                Ok(())
+            }
+            Yaml::UnityObject(x, y, z) => {
+                write!(self.writer, "{}.{} {}", x, y, z)?;
+                Ok(())
+            }
             // XXX(chenyh) Alias
             _ => Ok(()),
         }

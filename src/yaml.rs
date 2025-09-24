@@ -53,6 +53,10 @@ pub enum Yaml {
     BadValue,
     /// Original content.
     Original(string::String),
+    /// Yaml Version
+    Version((i32, i32)),
+    /// UnityObjectStart
+    UnityObject(u64, i64, bool),
 }
 
 impl Display for Yaml {
@@ -78,6 +82,8 @@ impl Display for Yaml {
             Yaml::Null => write!(f, "null"),
             Yaml::BadValue => write!(f, "bad value"),
             Yaml::Original(x) => write!(f, "{}", x),
+            Yaml::Version(x) => write!(f, "{}.{}", x.0, x.1),
+            Yaml::UnityObject(x, y, z) => write!(f, "{} {} {}", x, y, z),
         }
     }
 }
@@ -156,14 +162,7 @@ impl MarkedEventReceiver for YamlLoader {
                 self.docs.push(Yaml::Original(content))
             }
             Event::DocumentStart(cid, oid, stripped) => {
-                // do nothing
-                if cid > 0 {
-                    if !stripped {
-                        self.docs.push(Yaml::Original(format!("--- !u!{} &{}", cid, oid)))
-                    } else {
-                        self.docs.push(Yaml::Original(format!("--- !u!{} &{} {}", cid, oid, stripped)))
-                    }
-                }
+                self.docs.push(Yaml::UnityObject(cid, oid, stripped));
             }
             Event::DocumentEnd => {
                 match self.doc_stack.len() {
