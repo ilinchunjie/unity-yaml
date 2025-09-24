@@ -157,7 +157,7 @@ impl MarkedEventReceiver for YamlLoader {
             }
             Event::DocumentStart(cid, oid, stripped) => {
                 // do nothing
-                if cid > 0 && oid > 0 {
+                if cid > 0 {
                     if !stripped {
                         self.docs.push(Yaml::Original(format!("--- !u!{} &{}", cid, oid)))
                     } else {
