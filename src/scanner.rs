@@ -1132,16 +1132,10 @@ impl<T: Iterator<Item = char>> Scanner<T> {
 
         let mut stripped = false;
         if self.ch() == 's' {
-            self.skip();
-            self.skip();
-            self.skip();
-            self.skip();
-            self.skip();
-            self.skip();
-            self.skip();
-            self.skip();
-            self.lookahead(1);
-
+            for _ in 0..9 {
+                self.skip();
+                self.lookahead(1);
+            }
             stripped = true;
         }
 
